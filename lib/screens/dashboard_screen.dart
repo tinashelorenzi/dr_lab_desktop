@@ -6,6 +6,7 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import 'login_screen.dart';
+import '../services/heartbeat_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   final User user;
@@ -23,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     with SingleTickerProviderStateMixin {
   final _apiService = ApiService();
   final _storageService = StorageService();
+  final _heartbeatService = HeartbeatService();
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -44,10 +46,15 @@ class _DashboardScreenState extends State<DashboardScreen>
     ));
     
     _animationController.forward();
+    
+    // Start heartbeat service when dashboard loads
+    _heartbeatService.start();
   }
 
   @override
   void dispose() {
+    // Stop heartbeat service when leaving dashboard
+    _heartbeatService.stop();
     _animationController.dispose();
     super.dispose();
   }

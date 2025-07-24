@@ -356,4 +356,109 @@ class ApiService {
       return ApiResponse.success(null, 'Login updated');
     }
   }
+
+  Future<ApiResponse<Map<String, dynamic>>> sendHeartbeat() async {
+  try {
+    final response = await _makeRequest(
+      method: 'POST',
+      url: '$_baseUrl/heartbeat/ping',
+      headers: await _authHeaders,
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['success'] == true) {
+        return ApiResponse.success(data['data']);
+      } else {
+        return ApiResponse.error(data['message'] ?? 'Heartbeat failed');
+      }
+    } else if (response.statusCode == 401) {
+      // Token expired - clear auth data
+      await _storage.clearAuthData();
+      return ApiResponse.error('Session expired. Please login again.');
+    } else {
+      return ApiResponse.error('Server error during heartbeat');
+    }
+  } catch (e) {
+    if (kDebugMode) print('Heartbeat error: $e');
+    return ApiResponse.error('Heartbeat failed');
+  }
+}
+
+/// Get current session status
+Future<ApiResponse<Map<String, dynamic>>> getSessionStatus() async {
+  try {
+    final response = await _makeRequest(
+      method: 'GET',
+      url: '$_baseUrl/heartbeat/status',
+      headers: await _authHeaders,
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['success'] == true) {
+        return ApiResponse.success(data['data']);
+      } else {
+        return ApiResponse.error(data['message'] ?? 'Failed to get status');
+      }
+    } else if (response.statusCode == 401) {
+      await _storage.clearAuthData();
+      return ApiResponse.error('Session expired');
+    } else {
+      return ApiResponse.error('Server error');
+    }
+  } catch (e) {
+    if (kDebugMode) print('Session status error: $e');
+    return ApiResponse.error('Failed to get session status');
+  }
+}
+
+/// Get list of online users
+Future<ApiResponse<List<Map<String, dynamic>>>> getOnlineUsers() async {
+  try {
+    final response = await _makeRequest(
+      method: 'GET',
+      url: '$_baseUrl/heartbeat/online-users',
+      headers: await _authHeaders,
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['success'] == true) {
+        final onlineUsers = List<Map<String, dynamic>>.from(data['data']['online_users']);
+        return ApiResponse.success(onlineUsers);
+      } else {
+        return ApiResponse.error(data['message'] ?? 'Failed to get online users');
+      }
+    } else if (response.statusCode == 401) {
+      await _storage.clearAuthData();
+      return ApiResponse.error('Session expired');
+    } else {
+      return ApiResponse.error('Server error');
+    }
+  } catch (e) {
+    if (kDebugMode) print('Online users error: $e');
+    return ApiResponse.error('Failed to get online users');
+  }
+}
+
+/// Set user as offline (call when app closes)
+Future<ApiResponse<void>> setOffline() async {
+  try {
+    final response = await _makeRequest(
+      method: 'POST',
+      url: '$_baseUrl/heartbeat/offline',
+      headers: await _authHeaders,
+    );
+
+    if (response.statusCode == 200) {
+      return ApiResponse.success(null);
+    } else {
+      return ApiResponse.error('Failed to set offline status');
+    }
+  } catch (e) {
+    if (kDebugMode) print('Set offline error: $e');
+    return ApiResponse.error('Failed to set offline');
+  }
+}
 }
