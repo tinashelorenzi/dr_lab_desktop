@@ -1,4 +1,5 @@
 // lib/services/api_service.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/user.dart';
 import '../models/api_response.dart';
+import '../models/login_result.dart';
 import 'storage_service.dart';
 import 'debug_logger.dart';
 
@@ -160,7 +162,60 @@ class ApiService {
     }
   }
 
-  // Rest of your methods remain the same...
+  /// Check if user is authenticated
+  Future<bool> isAuthenticated() async {
+    try {
+      final token = await _storage.getAuthToken();
+      if (token == null) return false;
+      
+      // Verify token with server
+      final response = await _makeRequest(
+        method: 'GET',
+        url: '$_baseUrl/auth/profile',
+        headers: await _authHeaders,
+      );
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      if (kDebugMode) print('Authentication check failed: $e');
+      return false;
+    }
+  }
+
+  /// Get user profile
+  Future<ApiResponse<User>> getProfile() async {
+    try {
+      final response = await _makeRequest(
+        method: 'GET',
+        url: '$_baseUrl/auth/profile',
+        headers: await _authHeaders,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final user = User.fromJson(data['data']);
+          return ApiResponse.success(user);
+        } else {
+          return ApiResponse.error(data['message'] ?? 'Failed to get profile');
+        }
+      } else if (response.statusCode == 401) {
+        // Token is invalid, clear it
+        await _storage.clearAuthData();
+        return ApiResponse.error('Authentication expired. Please login again.');
+      } else {
+        return ApiResponse.error('Server error. Please try again.');
+      }
+    } on SocketException {
+      return ApiResponse.error('Cannot connect to server. Please check your connection.');
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. Please try again.');
+    } catch (e) {
+      if (kDebugMode) print('Profile error: $e');
+      return ApiResponse.error('An unexpected error occurred.');
+    }
+  }
+
   /// Login with email and password
   Future<ApiResponse<LoginResult>> login(String email, String password) async {
     try {
@@ -171,6 +226,7 @@ class ApiService {
         body: json.encode({
           'email': email,
           'password': password,
+          'device_name': 'Dr Lab Desktop',
         }),
       );
 
@@ -193,6 +249,9 @@ class ApiService {
         } else {
           return ApiResponse.error(data['message'] ?? 'Login failed');
         }
+      } else if (response.statusCode == 401) {
+        final data = json.decode(response.body);
+        return ApiResponse.error(data['message'] ?? 'Invalid credentials');
       } else if (response.statusCode == 422) {
         final data = json.decode(response.body);
         return ApiResponse.error(data['message'] ?? 'Invalid credentials');
@@ -208,6 +267,93 @@ class ApiService {
     } catch (e) {
       if (kDebugMode) print('Login error: $e');
       return ApiResponse.error('An unexpected error occurred.');
+    }
+  }
+
+  /// Logout user
+  Future<ApiResponse<void>> logout() async {
+    try {
+      final response = await _makeRequest(
+        method: 'POST',
+        url: '$_baseUrl/auth/logout',
+        headers: await _authHeaders,
+      );
+
+      // Clear local auth data regardless of server response
+      await _storage.clearAuthData();
+
+      if (response.statusCode == 200) {
+        return ApiResponse.success(null, 'Logged out successfully');
+      } else {
+        // Even if server logout fails, we've cleared local data
+        return ApiResponse.success(null, 'Logged out successfully');
+      }
+    } catch (e) {
+      // Clear local data even if network request fails
+      await _storage.clearAuthData();
+      if (kDebugMode) print('Logout error: $e');
+      return ApiResponse.success(null, 'Logged out successfully');
+    }
+  }
+
+  /// Setup account with password
+  Future<ApiResponse<User>> setupAccount(String password, String confirmPassword) async {
+    try {
+      final response = await _makeRequest(
+        method: 'POST',
+        url: '$_baseUrl/auth/setup-account',
+        headers: await _authHeaders,
+        body: json.encode({
+          'password': password,
+          'password_confirmation': confirmPassword,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final user = User.fromJson(data['data']['user']);
+          // Update stored user
+          await _storage.saveUser(user);
+          return ApiResponse.success(user, 'Account setup completed successfully');
+        } else {
+          return ApiResponse.error(data['message'] ?? 'Account setup failed');
+        }
+      } else if (response.statusCode == 422) {
+        final data = json.decode(response.body);
+        return ApiResponse.error(data['message'] ?? 'Validation failed');
+      } else {
+        return ApiResponse.error('Server error. Please try again.');
+      }
+    } on SocketException {
+      return ApiResponse.error('Cannot connect to server. Please check your connection.');
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. Please try again.');
+    } catch (e) {
+      if (kDebugMode) print('Setup account error: $e');
+      return ApiResponse.error('An unexpected error occurred.');
+    }
+  }
+
+  /// Update login timestamp
+  Future<ApiResponse<void>> updateLogin() async {
+    try {
+      final response = await _makeRequest(
+        method: 'POST',
+        url: '$_baseUrl/auth/update-login',
+        headers: await _authHeaders,
+      );
+
+      if (response.statusCode == 200) {
+        return ApiResponse.success(null, 'Login updated successfully');
+      } else {
+        // Don't fail the login flow if this fails
+        return ApiResponse.success(null, 'Login updated');
+      }
+    } catch (e) {
+      if (kDebugMode) print('Update login error: $e');
+      // Don't fail the login flow if this fails
+      return ApiResponse.success(null, 'Login updated');
     }
   }
 }

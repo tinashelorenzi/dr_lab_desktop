@@ -1,5 +1,7 @@
+// lib/main.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -9,6 +11,7 @@ import 'screens/account_setup_screen.dart';
 import 'services/storage_service.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
+import 'services/http_overrides.dart'; // Add this import
 import 'theme/app_theme.dart';
 import 'dart:io';
 
@@ -24,6 +27,7 @@ void main() async {
     // Continue without .env - the app will use default values
   }
 
+  // Set up HTTP overrides for desktop platforms
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     HttpOverrides.global = MyHttpOverrides();
   }
@@ -97,27 +101,25 @@ class _AppInitializerState extends State<AppInitializer> {
           // User is authenticated and token is valid
           final user = profileResponse.data!;
           
-          if (user.accountIsSet) {
-            // Navigate to dashboard
-            if (mounted) {
+          if (mounted) {
+            if (user.needsAccountSetup) {
+              // Navigate to account setup
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => AccountSetupScreen(user: user),
+                ),
+              );
+            } else {
+              // Navigate to dashboard
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(
                   builder: (context) => DashboardScreen(user: user),
                 ),
               );
             }
-          } else {
-            // Navigate to account setup
-            if (mounted) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => AccountSetupScreen(user: user),
-                ),
-              );
-            }
           }
         } else {
-          // Token is invalid, go to login
+          // Token is invalid, show login screen
           if (mounted) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
@@ -127,7 +129,7 @@ class _AppInitializerState extends State<AppInitializer> {
           }
         }
       } else {
-        // User is not authenticated, go to login
+        // No authentication, show login screen
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
@@ -137,7 +139,8 @@ class _AppInitializerState extends State<AppInitializer> {
         }
       }
     } catch (e) {
-      // Error during initialization, go to login
+      if (kDebugMode) print('Initialization error: $e');
+      // On error, show login screen
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
@@ -155,13 +158,53 @@ class _AppInitializerState extends State<AppInitializer> {
   @override
   Widget build(BuildContext context) {
     if (_isInitializing) {
-      return const Scaffold(
+      return Scaffold(
+        backgroundColor: const Color(0xFF1A1B23),
         body: Center(
-          child: CircularProgressIndicator(),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A5BD7),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.medical_services,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Dr Lab Desktop',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2A5BD7)),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Initializing...',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
+    // This should never be reached due to navigation in initializeApp
     return const LoginScreen();
   }
 }

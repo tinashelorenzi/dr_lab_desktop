@@ -1,3 +1,4 @@
+// lib/models/user.dart
 class User {
   final int id;
   final String firstName;
@@ -10,8 +11,8 @@ class User {
   final bool isActive;
   final DateTime? lastLoginAt;
   final DateTime? dateHired;
-  final DateTime createdAt;
-  final DateTime updatedAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   User({
     required this.id,
@@ -25,17 +26,44 @@ class User {
     required this.isActive,
     this.lastLoginAt,
     this.dateHired,
-    required this.createdAt,
-    required this.updatedAt,
+    this.createdAt,
+    this.updatedAt,
   });
 
   /// Get full name
-  String get fullName => '$firstName $lastName';
+  String get fullName {
+    final first = firstName.trim();
+    final last = lastName.trim();
+    
+    if (first.isEmpty && last.isEmpty) {
+      return email.split('@').first; // Use email prefix if no name
+    } else if (first.isEmpty) {
+      return last;
+    } else if (last.isEmpty) {
+      return first;
+    } else {
+      return '$first $last';
+    }
+  }
 
   /// Get initials
   String get initials {
-    final firstInitial = firstName.isNotEmpty ? firstName[0].toUpperCase() : '';
-    final lastInitial = lastName.isNotEmpty ? lastName[0].toUpperCase() : '';
+    final first = firstName.trim();
+    final last = lastName.trim();
+    
+    if (first.isEmpty && last.isEmpty) {
+      // Use email initials if no name
+      final emailPrefix = email.split('@').first;
+      return emailPrefix.isNotEmpty ? emailPrefix.substring(0, 1).toUpperCase() : 'U';
+    }
+    
+    final firstInitial = first.isNotEmpty ? first[0].toUpperCase() : '';
+    final lastInitial = last.isNotEmpty ? last[0].toUpperCase() : '';
+    
+    if (firstInitial.isEmpty && lastInitial.isEmpty) {
+      return 'U'; // Default to 'U' for User
+    }
+    
     return '$firstInitial$lastInitial';
   }
 
@@ -46,8 +74,8 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'] as int,
-      firstName: json['first_name'] as String,
-      lastName: json['last_name'] as String,
+      firstName: (json['first_name'] as String?) ?? '',
+      lastName: (json['last_name'] as String?) ?? '',
       email: json['email'] as String,
       phoneNumber: json['phone_number'] as String?,
       userType: json['user_type'] as String,
@@ -60,8 +88,12 @@ class User {
       dateHired: json['date_hired'] != null 
           ? DateTime.parse(json['date_hired'] as String)
           : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at'] as String)
+          : null,
+      updatedAt: json['updated_at'] != null 
+          ? DateTime.parse(json['updated_at'] as String)
+          : null,
     );
   }
 
@@ -80,8 +112,8 @@ class User {
       'is_active': isActive,
       'last_login_at': lastLoginAt?.toIso8601String(),
       'date_hired': dateHired?.toIso8601String(),
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt.toIso8601String(),
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 
