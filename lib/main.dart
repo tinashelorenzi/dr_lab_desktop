@@ -1,9 +1,39 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
+import 'screens/login_screen.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/account_setup_screen.dart';
+import 'services/storage_service.dart';
+import 'services/api_service.dart';
+import 'services/notification_service.dart';
+import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize window manager for desktop
+  await windowManager.ensureInitialized();
+  
+  WindowOptions windowOptions = const WindowOptions(
+    size: Size(1280, 720),
+    minimumSize: Size(800, 600),
+    center: true,
+    backgroundColor: Colors.transparent,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
+  );
+  
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
+
+  // Initialize notification service
+  await NotificationService().initialize();
+  
   runApp(const DrLabApp());
 }
 
@@ -15,143 +45,99 @@ class DrLabApp extends StatelessWidget {
     return MaterialApp(
       title: 'Dr Lab Desktop',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.transparent,
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF0078D4),
-          secondary: Color(0xFF106EBE),
-          surface: Color(0xFF1E1E1E),
-          background: Color(0xFF0D1117),
-          onSurface: Colors.white,
-          onBackground: Colors.white,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF0078D4),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-            ),
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFF2D2D30).withOpacity(0.7),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Color(0xFF404040)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Color(0xFF404040)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: Color(0xFF0078D4), width: 2),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(color: Colors.white),
-          bodyLarge: TextStyle(color: Colors.white),
-          titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-      ),
-      home: const LoginWindow(),
+      theme: AppTheme.darkTheme,
+      home: const AppInitializer(),
     );
   }
 }
 
-class LoginWindow extends StatefulWidget {
-  const LoginWindow({super.key});
+class AppInitializer extends StatefulWidget {
+  const AppInitializer({super.key});
 
   @override
-  State<LoginWindow> createState() => _LoginWindowState();
+  State<AppInitializer> createState() => _AppInitializerState();
 }
 
-class _LoginWindowState extends State<LoginWindow> with SingleTickerProviderStateMixin {
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _isLoading = false;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
+class _AppInitializerState extends State<AppInitializer> {
+  final _storageService = StorageService();
+  final _apiService = ApiService();
+  bool _isInitializing = true;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-    _animationController.forward();
+    _initializeApp();
   }
 
-  @override
-  void dispose() {
-    _animationController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handleLogin() async {
-    if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
-      _showErrorSnackBar('Please enter both username and password');
-      return;
+  Future<void> _initializeApp() async {
+    try {
+      // Check if user is already authenticated
+      final isAuthenticated = await _apiService.isAuthenticated();
+      
+      if (isAuthenticated) {
+        // Try to get user profile to verify token is still valid
+        final profileResponse = await _apiService.getProfile();
+        
+        if (profileResponse.isSuccess) {
+          // User is authenticated and token is valid
+          final user = profileResponse.data!;
+          
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) {
+                  if (user.needsAccountSetup) {
+                    return AccountSetupScreen(user: user);
+                  } else {
+                    return DashboardScreen(user: user);
+                  }
+                },
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  return FadeTransition(opacity: animation, child: child);
+                },
+                transitionDuration: const Duration(milliseconds: 300),
+              ),
+            );
+            return;
+          }
+        }
+      }
+      
+      // If we reach here, user needs to login
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const LoginScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            transitionDuration: const Duration(milliseconds: 300),
+          ),
+        );
+      }
+    } catch (e) {
+      // On any error, show login screen
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitializing = false;
+        });
+      }
     }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Simulate login process
-    await Future.delayed(const Duration(seconds: 2));
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    // For now, just show success message
-    _showSuccessSnackBar('Login successful!');
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: const Color(0xFFD13438),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: const Color(0xFF107C10),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitializing) {
+      return const SizedBox.shrink(); // Hide this widget after initialization
+    }
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -165,183 +151,42 @@ class _LoginWindowState extends State<LoginWindow> with SingleTickerProviderStat
             ],
           ),
         ),
-        child: Stack(
-          children: [
-            // Background blur overlay
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // App Icon
+              Icon(
+                Icons.medical_services_outlined,
+                size: 80,
+                color: AppTheme.primaryBlue,
               ),
-            ),
-            // Login form
-            Center(
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Container(
-                  width: 400,
-                  margin: const EdgeInsets.all(32),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E1E1E).withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF404040).withOpacity(0.5),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Padding(
-                        padding: const EdgeInsets.all(40),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // App title
-                            Text(
-                              'Dr Lab Desktop',
-                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w300,
-                                color: Colors.white,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Sign in to your account',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.white70,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 40),
-                            // Username field
-                            TextField(
-                              controller: _usernameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Username',
-                                prefixIcon: Icon(Icons.person_outline, color: Colors.white70),
-                              ),
-                              style: const TextStyle(color: Colors.white),
-                              onSubmitted: (_) => _handleLogin(),
-                            ),
-                            const SizedBox(height: 20),
-                            // Password field
-                            TextField(
-                              controller: _passwordController,
-                              obscureText: _obscurePassword,
-                              decoration: InputDecoration(
-                                labelText: 'Password',
-                                prefixIcon: const Icon(Icons.lock_outline, color: Colors.white70),
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                                    color: Colors.white70,
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
-                                ),
-                              ),
-                              style: const TextStyle(color: Colors.white),
-                              onSubmitted: (_) => _handleLogin(),
-                            ),
-                            const SizedBox(height: 32),
-                            // Login button
-                            SizedBox(
-                              height: 48,
-                              child: ElevatedButton(
-                                onPressed: _isLoading ? null : _handleLogin,
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      )
-                                    : const Text(
-                                        'Sign In',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            // Forgot password link
-                            TextButton(
-                              onPressed: () {
-                                // TODO: Handle forgot password
-                                _showErrorSnackBar('Forgot password feature coming soon');
-                              },
-                              child: Text(
-                                'Forgot your password?',
-                                style: TextStyle(
-                                  color: const Color(0xFF0078D4).withOpacity(0.9),
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+              SizedBox(height: 32),
+              
+              // Loading indicator
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    AppTheme.primaryBlue,
                   ),
                 ),
               ),
-            ),
-            // Window controls (close button) - positioned like macOS
-            Positioned(
-              top: 16,
-              left: 16,
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => SystemNavigator.pop(),
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFF5F57),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFFBD2E),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF28CA42),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
+              SizedBox(height: 24),
+              
+              // Loading text
+              Text(
+                'Initializing Dr Lab Desktop...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

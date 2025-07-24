@@ -1,28 +1,41 @@
 name: dr_lab_desktop
-description: "Dr Lab Desktop Application"
+description: "A desktop application for Dr Lab LIMS system"
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.2.3 <4.0.0'
+  sdk: '>=3.4.3 <4.0.0'
+  flutter: ">=3.18.0-18.0.pre.54"
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.2
-  window_manager: ^0.3.7
-  http: ^1.1.0
+  
+  # HTTP requests
+  http: ^1.4.0
+  
+  # Local storage
+  shared_preferences: ^2.3.2
+  
+  # Desktop notifications
+  flutter_local_notifications: ^18.0.1
+  
+  # Window management
+  window_manager: ^0.3.9
+  
+  # Icons
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^3.0.2
 
 flutter:
   uses-material-design: true
   
-  # Uncomment and add your assets here when needed
-  # assets:
-  #   - images/
-  #   - icons/
+  # Add app icons and assets
+  assets:
+    - assets/images/
+    - assets/icons/
