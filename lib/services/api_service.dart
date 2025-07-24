@@ -165,6 +165,131 @@ class ApiService {
     }
   }
 
+  /// Setup user account with new password
+  Future<ApiResponse<User>> setupAccount(String password, String passwordConfirmation) async {
+    try {
+      final headers = await _authHeaders;
+      final response = await _makeRequest(
+        method: 'POST',
+        url: '$_baseUrl/auth/setup-account',
+        headers: headers,
+        body: json.encode({
+          'password': password,
+          'password_confirmation': passwordConfirmation,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
+        if (data['success'] == true) {
+          final user = User.fromJson(data['data']['user']);
+          await _storage.saveUser(user);
+          
+          return ApiResponse.success(user);
+        } else {
+          return ApiResponse.error(data['message'] ?? 'Setup failed');
+        }
+      } else if (response.statusCode == 422) {
+        final data = json.decode(response.body);
+        final errors = data['errors'] as Map<String, dynamic>?;
+        if (errors != null && errors.containsKey('password')) {
+          return ApiResponse.error(errors['password'][0]);
+        }
+        return ApiResponse.error(data['message'] ?? 'Validation failed');
+      } else {
+        return ApiResponse.error('Server error. Please try again.');
+      }
+    } on SocketException {
+      return ApiResponse.error('No internet connection. Please check your network.');
+    } catch (e) {
+      if (kDebugMode) print('Setup account error: $e');
+      return ApiResponse.error('An unexpected error occurred.');
+    }
+  }
+
+  /// Get current user profile
+  Future<ApiResponse<User>> getProfile() async {
+    try {
+      final headers = await _authHeaders;
+      final response = await _makeRequest(
+        method: 'GET',
+        url: '$_baseUrl/auth/profile',
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
+        if (data['success'] == true) {
+          final user = User.fromJson(data['data']['user']);
+          await _storage.saveUser(user);
+          
+          return ApiResponse.success(user);
+        } else {
+          return ApiResponse.error(data['message'] ?? 'Failed to get profile');
+        }
+      } else if (response.statusCode == 401) {
+        // Token expired or invalid
+        await _storage.clearAuthData();
+        return ApiResponse.error('Session expired. Please login again.');
+      } else {
+        return ApiResponse.error('Server error. Please try again.');
+      }
+    } catch (e) {
+      if (kDebugMode) print('Get profile error: $e');
+      return ApiResponse.error('An unexpected error occurred.');
+    }
+  }
+
+  /// Update login timestamp
+  Future<ApiResponse<void>> updateLogin() async {
+    try {
+      final headers = await _authHeaders;
+      final response = await _makeRequest(
+        method: 'POST',
+        url: '$_baseUrl/auth/update-login',
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return ApiResponse.success(null);
+      } else {
+        return ApiResponse.error('Failed to update login timestamp');
+      }
+    } catch (e) {
+      if (kDebugMode) print('Update login error: $e');
+      return ApiResponse.error('Failed to update login timestamp');
+    }
+  }
+
+  /// Logout from current device
+  Future<ApiResponse<void>> logout() async {
+    try {
+      final headers = await _authHeaders;
+      await _makeRequest(
+        method: 'POST',
+        url: '$_baseUrl/auth/logout',
+        headers: headers,
+      );
+      
+      // Clear local storage regardless of API response
+      await _storage.clearAuthData();
+      
+      return ApiResponse.success(null);
+    } catch (e) {
+      // Clear local storage even if API call fails
+      await _storage.clearAuthData();
+      return ApiResponse.success(null);
+    }
+  }
+
+  /// Check if user is authenticated
+  Future<bool> isAuthenticated() async {
+    final token = await _storage.getAuthToken();
+    return token != null;
+  }
+
   /// Generic GET request with authentication
   Future<ApiResponse<T>> get<T>(
     String endpoint,
@@ -226,30 +351,8 @@ class ApiService {
       return ApiResponse.error('An unexpected error occurred: $e');
     }
   }
-
-  /// Logout user
-  Future<ApiResponse<void>> logout() async {
-    try {
-      final headers = await _authHeaders;
-      await _makeRequest(
-        method: 'POST',
-        url: '$_baseUrl/auth/logout',
-        headers: headers,
-      );
-      
-      // Clear local storage regardless of response
-      await _storage.clearAuthData();
-      
-      return ApiResponse.success(null);
-    } catch (e) {
-      // Still clear local data even if logout request fails
-      await _storage.clearAuthData();
-      return ApiResponse.success(null);
-    }
-  }
 }
 
-// LoginResult class for the login response
 class LoginResult {
   final User user;
   final String token;

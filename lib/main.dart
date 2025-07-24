@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/account_setup_screen.dart';
@@ -12,6 +13,15 @@ import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize environment variables
+  try {
+    await dotenv.load(fileName: ".env");
+    print('Environment variables loaded successfully');
+  } catch (e) {
+    print('Failed to load .env file: $e');
+    // Continue without .env - the app will use default values
+  }
   
   // Initialize window manager for desktop
   await windowManager.ensureInitialized();
@@ -82,113 +92,71 @@ class _AppInitializerState extends State<AppInitializer> {
           // User is authenticated and token is valid
           final user = profileResponse.data!;
           
+          if (user.accountIsSet) {
+            // Navigate to dashboard
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => DashboardScreen(user: user),
+                ),
+              );
+            }
+          } else {
+            // Navigate to account setup
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => AccountSetupScreen(user: user),
+                ),
+              );
+            }
+          }
+        } else {
+          // Token is invalid, go to login
           if (mounted) {
             Navigator.of(context).pushReplacement(
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) {
-                  if (user.needsAccountSetup) {
-                    return AccountSetupScreen(user: user);
-                  } else {
-                    return DashboardScreen(user: user);
-                  }
-                },
-                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                  return FadeTransition(opacity: animation, child: child);
-                },
-                transitionDuration: const Duration(milliseconds: 300),
+              MaterialPageRoute(
+                builder: (context) => const LoginScreen(),
               ),
             );
-            return;
           }
         }
-      }
-      
-      // If we reach here, user needs to login
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const LoginScreen(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(opacity: animation, child: child);
-            },
-            transitionDuration: const Duration(milliseconds: 300),
-          ),
-        );
+      } else {
+        // User is not authenticated, go to login
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const LoginScreen(),
+            ),
+          );
+        }
       }
     } catch (e) {
-      // On any error, show login screen
+      // Error during initialization, go to login
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          ),
         );
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isInitializing = false;
-        });
+        setState(() => _isInitializing = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isInitializing) {
-      return const SizedBox.shrink(); // Hide this widget after initialization
+    if (_isInitializing) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
     }
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0D1117),
-              Color(0xFF161B22),
-              Color(0xFF21262D),
-            ],
-          ),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // App Icon
-              Icon(
-                Icons.medical_services_outlined,
-                size: 80,
-                color: AppTheme.primaryBlue,
-              ),
-              SizedBox(height: 32),
-              
-              // Loading indicator
-              SizedBox(
-                width: 40,
-                height: 40,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    AppTheme.primaryBlue,
-                  ),
-                ),
-              ),
-              SizedBox(height: 24),
-              
-              // Loading text
-              Text(
-                'Initializing Dr Lab Desktop...',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return const LoginScreen();
   }
 }
