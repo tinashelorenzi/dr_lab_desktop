@@ -15,6 +15,9 @@ dependencies:
   # HTTP requests
   http: ^1.4.0
   
+  # Environment variables
+  flutter_dotenv: ^5.1.0
+  
   # Local storage
   shared_preferences: ^2.3.2
   
@@ -39,3 +42,4 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - .env  # Add this line to include .env file
