@@ -10,6 +10,7 @@ import 'services/storage_service.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
+import 'dart:io';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +22,10 @@ void main() async {
   } catch (e) {
     print('Failed to load .env file: $e');
     // Continue without .env - the app will use default values
+  }
+
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    HttpOverrides.global = MyHttpOverrides();
   }
   
   // Initialize window manager for desktop
